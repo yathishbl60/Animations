@@ -10,7 +10,7 @@ import UIKit
 
 final class GridViewCell: UICollectionViewCell {
 
-    @IBOutlet var imageView: UIImageView!
+    @IBOutlet private var imageView: UIImageView!
 
     var representedAssetIdentifier: String!
 
@@ -19,7 +19,6 @@ final class GridViewCell: UICollectionViewCell {
             imageView.image = thumbnailImage
         }
     }
-
 
     override func prepareForReuse() {
         super.prepareForReuse()

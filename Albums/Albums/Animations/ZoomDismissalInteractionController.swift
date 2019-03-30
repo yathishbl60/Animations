@@ -168,7 +168,7 @@ extension ZoomDismissalInteractionController: UIViewControllerInteractiveTransit
             else {
                 return
         }
-
+        
         animator.fromDelegate?.transitionWillStartWith(zoomAnimator: animator)
         animator.toDelegate?.transitionWillStartWith(zoomAnimator: animator)
 
