@@ -19,10 +19,6 @@ class AssetViewController: UIViewController {
     @IBOutlet weak var editButton: UIBarButtonItem!
     @IBOutlet weak var progressView: UIProgressView!
 
-    #if os(tvOS)
-    @IBOutlet var livePhotoPlayButton: UIBarButtonItem!
-    #endif
-
     @IBOutlet var playButton: UIBarButtonItem!
     @IBOutlet var space: UIBarButtonItem!
     @IBOutlet var trashButton: UIBarButtonItem!
@@ -55,7 +51,6 @@ class AssetViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         // Set the appropriate toolbar items based on the media type of the asset.
-        #if os(iOS)
         navigationController?.isToolbarHidden = false
         navigationController?.hidesBarsOnTap = true
         if asset.mediaType == .video {
@@ -65,19 +60,7 @@ class AssetViewController: UIViewController {
             // PHLivePhotoView provides the same gesture-based UI as in the Photos app.
             toolbarItems = [favoriteButton, space, trashButton]
         }
-        #elseif os(tvOS)
-        if asset.mediaType == .video {
-            navigationItem.leftBarButtonItems = [playButton, favoriteButton, trashButton]
-        } else {
-            // In tvOS, PHLivePhotoView doesn't support playback gestures,
-            // so add a play button for Live Photos.
-            if asset.mediaSubtypes.contains(.photoLive) {
-                navigationItem.leftBarButtonItems = [favoriteButton, trashButton]
-            } else {
-                navigationItem.leftBarButtonItems = [livePhotoPlayButton, favoriteButton, trashButton]
-            }
-        }
-        #endif
+
         // Enable editing buttons if the user can edit the asset.
         editButton.isEnabled = asset.canPerform(.content)
         favoriteButton.isEnabled = asset.canPerform(.properties)
@@ -133,11 +116,7 @@ class AssetViewController: UIViewController {
         // Present the UIAlertController.
         present(alertController, animated: true)
     }
-    #if os(tvOS)
-    @IBAction func playLivePhoto(_ sender: Any) {
-        livePhotoView.startPlayback(with: .full)
-    }
-    #endif
+
     /// - Tag: PlayVideo
     @IBAction func play(_ sender: AnyObject) {
         if playerLayer != nil {
