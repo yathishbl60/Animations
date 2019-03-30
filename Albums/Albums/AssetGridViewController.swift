@@ -10,25 +10,16 @@ import UIKit
 import Photos
 import PhotosUI
 
-private extension UICollectionView {
-    func indexPathsForElements(in rect: CGRect) -> [IndexPath] {
-        let allLayoutAttributes = collectionViewLayout.layoutAttributesForElements(in: rect)!
-        return allLayoutAttributes.map { $0.indexPath }
-    }
-}
+final class AssetGridViewController: UICollectionViewController {
 
-class AssetGridViewController: UICollectionViewController {
+    private var fetchResult: PHFetchResult<PHAsset>?
+    private var availableWidth: CGFloat = 0
 
-    var fetchResult: PHFetchResult<PHAsset>!
-    var assetCollection: PHAssetCollection!
-    var availableWidth: CGFloat = 0
+    @IBOutlet private weak var collectionViewFlowLayout: UICollectionViewFlowLayout!
 
-    @IBOutlet var addButtonItem: UIBarButtonItem!
-    @IBOutlet weak var collectionViewFlowLayout: UICollectionViewFlowLayout!
-
-    fileprivate let imageManager = PHCachingImageManager()
-    fileprivate var thumbnailSize: CGSize!
-    fileprivate var previousPreheatRect = CGRect.zero
+    private let imageManager = PHCachingImageManager()
+    private var thumbnailSize: CGSize!
+    private var previousPreheatRect = CGRect.zero
 
     // MARK: UIViewController / Life Cycle
 
@@ -36,24 +27,29 @@ class AssetGridViewController: UICollectionViewController {
         super.viewDidLoad()
 
         resetCachedAssets()
-        PHPhotoLibrary.shared().register(self)
 
-        // Reaching this point without a segue means that this AssetGridViewController
-        // became visible at app launch. As such, match the behavior of the segue from
-        // the default "All Photos" view.
-        if fetchResult == nil {
-            let allPhotosOptions = PHFetchOptions()
-            allPhotosOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
-            fetchResult = PHAsset.fetchAssets(with: allPhotosOptions)
+        PHPhotoLibrary.requestAuthorization { status in
+            switch status {
+            case .authorized:
+                let allPhotosOptions = PHFetchOptions()
+                allPhotosOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
+                self.fetchResult = PHAsset.fetchAssets(with: .image, options: allPhotosOptions)
+                DispatchQueue.main.async {
+                    self.collectionView.reloadData()
+                }
+            case .denied, .restricted:
+                print("Not allowed")
+            case .notDetermined:
+                print("Not determined yet")
+            @unknown default:
+                fatalError()
+            }
         }
-    }
-
-    deinit {
-        PHPhotoLibrary.shared().unregisterChangeObserver(self)
     }
 
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
+
         let width = view.bounds.inset(by: view.safeAreaInsets).width
         // Adjust the item size if the available width has changed.
         if availableWidth != width {
@@ -71,13 +67,6 @@ class AssetGridViewController: UICollectionViewController {
         let scale = UIScreen.main.scale
         let cellSize = collectionViewFlowLayout.itemSize
         thumbnailSize = CGSize(width: cellSize.width * scale, height: cellSize.height * scale)
-
-        // Add a button to the navigation bar if the asset collection supports adding content.
-        if assetCollection == nil || assetCollection.canPerform(.addContent) {
-            navigationItem.rightBarButtonItem = addButtonItem
-        } else {
-            navigationItem.rightBarButtonItem = nil
-        }
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -90,27 +79,21 @@ class AssetGridViewController: UICollectionViewController {
         guard let collectionViewCell = sender as? UICollectionViewCell else { fatalError("Unexpected sender for segue") }
 
         let indexPath = collectionView.indexPath(for: collectionViewCell)!
-        destination.asset = fetchResult.object(at: indexPath.item)
-        destination.assetCollection = assetCollection
+        destination.asset = fetchResult!.object(at: indexPath.item)
     }
 
     // MARK: UICollectionView
 
     override func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        return fetchResult.count
+        return fetchResult?.count ?? 0
     }
 
     /// - Tag: PopulateCell
     override func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        let asset = fetchResult.object(at: indexPath.item)
+        let asset = fetchResult!.object(at: indexPath.item)
         // Dequeue a GridViewCell.
         guard let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "GridViewCell", for: indexPath) as? GridViewCell
             else { fatalError("Unexpected cell in collection view") }
-
-        // Add a badge to the cell if the PHAsset represents a Live Photo.
-        if asset.mediaSubtypes.contains(.photoLive) {
-            cell.livePhotoBadgeImage = PHLivePhotoView.livePhotoBadgeImage(options: .overContent)
-        }
 
         // Request an image for the asset from the PHCachingImageManager.
         cell.representedAssetIdentifier = asset.localIdentifier
@@ -136,6 +119,7 @@ class AssetGridViewController: UICollectionViewController {
         imageManager.stopCachingImagesForAllAssets()
         previousPreheatRect = .zero
     }
+
     /// - Tag: UpdateAssets
     fileprivate func updateCachedAssets() {
         // Update only if the view is visible.
@@ -153,10 +137,10 @@ class AssetGridViewController: UICollectionViewController {
         let (addedRects, removedRects) = differencesBetweenRects(previousPreheatRect, preheatRect)
         let addedAssets = addedRects
             .flatMap { rect in collectionView!.indexPathsForElements(in: rect) }
-            .map { indexPath in fetchResult.object(at: indexPath.item) }
+            .map { indexPath in fetchResult!.object(at: indexPath.item) }
         let removedAssets = removedRects
             .flatMap { rect in collectionView!.indexPathsForElements(in: rect) }
-            .map { indexPath in fetchResult.object(at: indexPath.item) }
+            .map { indexPath in fetchResult!.object(at: indexPath.item) }
 
         // Update the assets the PHCachingImageManager is caching.
         imageManager.startCachingImages(for: addedAssets,
@@ -193,74 +177,11 @@ class AssetGridViewController: UICollectionViewController {
         }
     }
 
-    // MARK: UI Actions
-    /// - Tag: AddAsset
-    @IBAction func addAsset(_ sender: AnyObject?) {
-
-        // Create a dummy image of a random solid color and random orientation.
-        let size = (arc4random_uniform(2) == 0) ?
-            CGSize(width: 400, height: 300) :
-            CGSize(width: 300, height: 400)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { context in
-            UIColor(hue: CGFloat(arc4random_uniform(100)) / 100,
-                    saturation: 1, brightness: 1, alpha: 1).setFill()
-            context.fill(context.format.bounds)
-        }
-        // Add the asset to the photo library.
-        PHPhotoLibrary.shared().performChanges({
-            let creationRequest = PHAssetChangeRequest.creationRequestForAsset(from: image)
-            if let assetCollection = self.assetCollection {
-                let addAssetRequest = PHAssetCollectionChangeRequest(for: assetCollection)
-                addAssetRequest?.addAssets([creationRequest.placeholderForCreatedAsset!] as NSArray)
-            }
-        }, completionHandler: {success, error in
-            if !success { print("Error creating the asset: \(String(describing: error))") }
-        })
-    }
-
 }
 
-// MARK: PHPhotoLibraryChangeObserver
-extension AssetGridViewController: PHPhotoLibraryChangeObserver {
-    func photoLibraryDidChange(_ changeInstance: PHChange) {
-
-        guard let changes = changeInstance.changeDetails(for: fetchResult)
-            else { return }
-
-        // Change notifications may originate from a background queue.
-        // As such, re-dispatch execution to the main queue before acting
-        // on the change, so you can update the UI.
-        DispatchQueue.main.sync {
-            // Hang on to the new fetch result.
-            fetchResult = changes.fetchResultAfterChanges
-            // If we have incremental changes, animate them in the collection view.
-            if changes.hasIncrementalChanges {
-                guard let collectionView = self.collectionView else { fatalError() }
-                // Handle removals, insertions, and moves in a batch update.
-                collectionView.performBatchUpdates({
-                    if let removed = changes.removedIndexes, !removed.isEmpty {
-                        collectionView.deleteItems(at: removed.map({ IndexPath(item: $0, section: 0) }))
-                    }
-                    if let inserted = changes.insertedIndexes, !inserted.isEmpty {
-                        collectionView.insertItems(at: inserted.map({ IndexPath(item: $0, section: 0) }))
-                    }
-                    changes.enumerateMoves { fromIndex, toIndex in
-                        collectionView.moveItem(at: IndexPath(item: fromIndex, section: 0),
-                                                to: IndexPath(item: toIndex, section: 0))
-                    }
-                })
-                // We are reloading items after the batch update since `PHFetchResultChangeDetails.changedIndexes` refers to
-                // items in the *after* state and not the *before* state as expected by `performBatchUpdates(_:completion:)`.
-                if let changed = changes.changedIndexes, !changed.isEmpty {
-                    collectionView.reloadItems(at: changed.map({ IndexPath(item: $0, section: 0) }))
-                }
-            } else {
-                // Reload the collection view if incremental changes are not available.
-                collectionView.reloadData()
-            }
-            resetCachedAssets()
-        }
+private extension UICollectionView {
+    func indexPathsForElements(in rect: CGRect) -> [IndexPath] {
+        let allLayoutAttributes = collectionViewLayout.layoutAttributesForElements(in: rect)!
+        return allLayoutAttributes.map { $0.indexPath }
     }
 }
-
