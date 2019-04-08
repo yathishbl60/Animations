@@ -10,6 +10,7 @@ import UIKit
 
 @objc public protocol ImageScrollViewDelegate: UIScrollViewDelegate {
     func imageScrollViewDidChangeOrientation(imageScrollView: ImageScrollView)
+    func imageScrollViewDidTap(imageScrollView: ImageScrollView)
 }
 
 open class ImageScrollView: UIScrollView {
@@ -39,6 +40,9 @@ open class ImageScrollView: UIScrollView {
     private var pointToCenterAfterResize: CGPoint = CGPoint.zero
     private var scaleToRestoreAfterResize: CGFloat = 1.0
     var maxScaleFromMinScale: CGFloat = 3.0
+
+    private var tapGesture: UITapGestureRecognizer?
+    private var doubleTapGesture: UITapGestureRecognizer?
 
     override open var frame: CGRect {
         willSet {
@@ -181,9 +185,17 @@ open class ImageScrollView: UIScrollView {
         zoomView!.isUserInteractionEnabled = true
         addSubview(zoomView!)
 
-        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(ImageScrollView.doubleTapGestureRecognizer(_:)))
-        tapGesture.numberOfTapsRequired = 2
+        let doubleTapGesture = UITapGestureRecognizer(target: self, action: #selector(ImageScrollView.doubleTapGestureRecognizer(_:)))
+        doubleTapGesture.numberOfTapsRequired = 2
+        doubleTapGesture.delegate = self
+        zoomView!.addGestureRecognizer(doubleTapGesture)
+        self.doubleTapGesture = doubleTapGesture
+
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(singleTapGestureFired))
+        tapGesture.numberOfTapsRequired = 1
+        tapGesture.delegate = self
         zoomView!.addGestureRecognizer(tapGesture)
+        self.tapGesture = tapGesture
 
         configureImageForSize(image.size)
     }
@@ -289,6 +301,25 @@ open class ImageScrollView: UIScrollView {
             self.imageScrollViewDelegate?.imageScrollViewDidChangeOrientation(imageScrollView: self)
         }
     }
+
+    @objc func singleTapGestureFired() {
+        self.delegate?.scrollViewDidEndScrollingAnimation?(self)
+    }
+
+}
+
+extension ImageScrollView: UIGestureRecognizerDelegate {
+
+    public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                                  shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        // Don't recognize a single tap until a double-tap fails.
+        if gestureRecognizer == self.tapGesture &&
+            otherGestureRecognizer == self.doubleTapGesture {
+            return true
+        }
+        return false
+    }
+
 }
 
 extension ImageScrollView: UIScrollViewDelegate {
